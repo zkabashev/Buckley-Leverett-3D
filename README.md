@@ -62,8 +62,8 @@ Because $f_w$ is S-shaped, a shock (discontinuity) forms at the leading edge of 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/buckley-leverett.git
-cd buckley-leverett
+git clone https://github.com/<your-username>/Buckley-Leverett-3D.git
+cd Buckley-Leverett-3D
 pip install -r requirements.txt
 ```
 
@@ -135,7 +135,7 @@ The script opens a single window with four panels and three sliders at the botto
 ## Repository Structure
 
 ```
-buckley-leverett/
+Buckley-Leverett-3D/
 ├── buckley_leverett.py              # interactive Matplotlib script
 ├── buckley_leverett_notebook.ipynb  # educational Jupyter notebook
 ├── screenshots/
