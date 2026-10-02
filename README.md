@@ -62,7 +62,7 @@ Because $f_w$ is S-shaped, a shock (discontinuity) forms at the leading edge of 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/Buckley-Leverett-3D.git
+git clone https://github.com/zkabashev/Buckley-Leverett-3D.git
 cd Buckley-Leverett-3D
 pip install -r requirements.txt
 ```
