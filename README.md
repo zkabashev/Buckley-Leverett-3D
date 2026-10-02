@@ -59,13 +59,45 @@ Because $f_w$ is S-shaped, a shock (discontinuity) forms at the leading edge of 
 
 ---
 
-## Installation
+## Quick Start
+
+From a fresh clone, run the project from the repository root:
+
+### Windows PowerShell
+
+```powershell
+git clone <your-repo-url>
+cd Buckley-Leverett-3D-1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python buckley_leverett.py
+```
+
+### macOS / Linux
 
 ```bash
-git clone https://github.com/zkabashev/Buckley-Leverett-3D.git
-cd Buckley-Leverett-3D
-pip install -r requirements.txt
+git clone <your-repo-url>
+cd Buckley-Leverett-3D-1
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python buckley_leverett.py
 ```
+
+This keeps all project dependencies local to the repo and avoids "works only on my machine" issues.
+
+### Headless / remote machines
+
+If you are running on a machine without a desktop display, use:
+
+```bash
+MPLBACKEND=Agg python buckley_leverett.py
+```
+
+This keeps the script importable and avoids GUI startup issues in CI or server environments.
 
 ---
 

@@ -1,3 +1,5 @@
+from functools import lru_cache
+
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
@@ -18,6 +20,7 @@ U_TOT = 1.0           # total Darcy velocity (normalised)
 
 def normalised_sat(sw):
     """Effective (normalised) water saturation."""
+    sw = np.asarray(sw, dtype=np.float64)
     return np.clip((sw - S_WC) / (1.0 - S_WC - S_OR), 0.0, 1.0)
 
 def rel_perms(sw):
@@ -28,12 +31,16 @@ def rel_perms(sw):
 
 def fractional_flow(sw, mu_w):
     """Water fractional flow  f_w(S_w ; μ_w)."""
-    krw, kro = rel_perms(sw)
+    sw = np.asarray(sw, dtype=np.float64)
+    sn = normalised_sat(sw)
+    krw = sn ** N_W
+    kro = (1.0 - sn) ** N_O
     lam_w = krw / mu_w
     lam_o = kro / MU_O
     denom = lam_w + lam_o
-    # avoid division by zero at endpoints
-    fw = np.where(denom > 1e-12, lam_w / denom, 0.0)
+    fw = np.zeros_like(sw, dtype=np.float64)
+    mask = denom > 1e-12
+    fw[mask] = lam_w[mask] / denom[mask]
     return fw
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,32 +54,31 @@ TMAX = 1.0          # dimensionless pore-volumes injected
 def run_simulation(mu_w: float):
     """Return saturation array S[nx, nt] for given μ_w."""
     dx = XMAX / NX
-    # CFL-limited time step  (max df/dS ≤ ~ 4 for typical Corey)
     max_dfw = 4.0
-    dt_cfl  = 0.45 * dx / (U_TOT * max_dfw)
+    dt_cfl = 0.45 * dx / (U_TOT * max_dfw)
 
-    # choose stored snapshots evenly spaced in time
-    t_out   = np.linspace(0.0, TMAX, NT)
+    t_out = np.linspace(0.0, TMAX, NT)
     dt_store = t_out[1] - t_out[0]
-    n_sub   = max(1, int(np.ceil(dt_store / dt_cfl)))
-    dt      = dt_store / n_sub          # actual integration dt
+    n_sub = max(1, int(np.ceil(dt_store / dt_cfl)))
+    dt = dt_store / n_sub
 
     x = np.linspace(0.5 * dx, XMAX - 0.5 * dx, NX)
-    S = np.full(NX, S_WC)              # initial condition: connate water
+    S = np.full(NX, S_WC, dtype=np.float64)
 
-    S_out = np.zeros((NX, NT))
-    S_out[:, 0] = S.copy()
+    S_out = np.empty((NX, NT), dtype=np.float64)
+    S_out[:, 0] = S
+
+    flux_left = np.empty(NX, dtype=np.float64)
+    left_boundary_fw = fractional_flow(np.array([1.0 - S_OR]), mu_w)[0]
 
     for k in range(1, NT):
         for _ in range(n_sub):
-            fw  = fractional_flow(S, mu_w)
-            # upwind flux at cell faces (injection from left at fw = 1)
-            flux_left  = np.empty(NX)
-            flux_left[0]  = fractional_flow(np.array([1.0 - S_OR]), mu_w)[0]
-            flux_left[1:] = fw[:-1]          # upwind: flow left → right
+            fw = fractional_flow(S, mu_w)
+            flux_left[0] = left_boundary_fw
+            flux_left[1:] = fw[:-1]
             dS = -(U_TOT / dx) * (fw - flux_left) * dt
-            S  = np.clip(S + dS, S_WC, 1.0 - S_OR)
-        S_out[:, k] = S.copy()
+            S = np.clip(S + dS, S_WC, 1.0 - S_OR)
+        S_out[:, k] = S
 
     return x, t_out, S_out
 
@@ -173,13 +179,13 @@ def sat_color(s_val):
 # ─────────────────────────────────────────────────────────────────────────────
 # 6.  SHOCK CONSTRUCTION
 # ─────────────────────────────────────────────────────────────────────────────
+@lru_cache(maxsize=256)
 def _shock_saturation(mu_w, n_pts=500):
     """Welge tangent construction – returns shock-front saturation."""
     sw_arr = np.linspace(S_WC + 1e-4, 1.0 - S_OR - 1e-4, n_pts)
     fw_arr = fractional_flow(sw_arr, mu_w)
-    # slope from (S_wc, 0)
-    slope  = (fw_arr - 0.0) / (sw_arr - S_WC)
-    return sw_arr[np.argmax(slope)]
+    slope = (fw_arr - 0.0) / (sw_arr - S_WC)
+    return float(sw_arr[np.argmax(slope)])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,26 +196,23 @@ _cache = {}   # store last simulation results
 def draw(mu_w, t_val, x_val):
     global _cache
 
-    # re-run only when μ_w changes
     if _cache.get("mu_w") != mu_w:
         x, t, S = run_simulation(mu_w)
-        _cache = dict(mu_w=mu_w, x=x, t=t, S=S)
+        T_grid, X_grid = np.meshgrid(t, x)
+        _cache = dict(mu_w=mu_w, x=x, t=t, S=S, T_grid=T_grid, X_grid=X_grid)
     else:
         x, t, S = _cache["x"], _cache["t"], _cache["S"]
+        T_grid, X_grid = _cache["T_grid"], _cache["X_grid"]
 
     t_idx = int(np.argmin(np.abs(t - t_val)))
     x_idx = int(np.argmin(np.abs(x - x_val)))
 
-    T_grid, X_grid = np.meshgrid(t, x)      # shapes (NX, NT)
-
-    # ── 3-D surface ──────────────────────────────────────────────────────────
     ax3d.cla()
     ax3d.set_facecolor("#1a1a1a")
     for a in [ax3d.xaxis, ax3d.yaxis, ax3d.zaxis]:
         a.pane.fill = False
         a.line.set_color("#444444")
 
-    # Subsample for speed
     step_x, step_t = max(1, NX // 60), max(1, NT // 60)
     Xs = X_grid[::step_x, ::step_t]
     Ts = T_grid[::step_x, ::step_t]
@@ -239,8 +242,8 @@ def draw(mu_w, t_val, x_val):
               color="#ffaa00", linewidth=2.0, zorder=10)
     ax3d.plot_surface(
         np.full((2, NT), x[x_idx]),
-        np.row_stack([t, t]),
-        np.row_stack([np.zeros(NT), s_xslice]),
+        np.vstack([t, t]),
+        np.vstack([np.zeros(NT), s_xslice]),
         color="#ffaa00", alpha=0.10
     )
 
@@ -339,6 +342,10 @@ sl_mu.on_changed(on_change)
 # ─────────────────────────────────────────────────────────────────────────────
 # 9.  INITIAL DRAW
 # ─────────────────────────────────────────────────────────────────────────────
-draw(mu_w=1.0, t_val=0.5, x_val=0.5)
+def main():
+    draw(mu_w=1.0, t_val=0.5, x_val=0.5)
+    plt.show()
 
-plt.show()
+
+if __name__ == "__main__":
+    main()
